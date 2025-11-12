@@ -1,110 +1,42 @@
 ---
-title: "Selection Bias & Missing Data Challenge - Part 1"
-subtitle: "Blue Noise Stippling: Creating Art from Data"
+title: "Range Rover Blue Noise Stippling"
 format:
   html: default
+  pdf: default
 execute:
-  echo: true
+  echo: false
   eval: true
 ---
 
-# 🎨 Selection Bias & Missing Data Challenge - Part 1
-
-::: {.callout-important}
-## 📊 Challenge Requirements
-
-**Your Task:** Reproduce the blue noise stippling process demonstrated below to create:
-
-1. A stippled version of your chosen image
-2. A progressive stippling GIF animation
-3. Post both to a GitHub Pages site with appropriate captions and a brief explanation
-
-**Part 2 Preview:** On November 18th, we'll tackle Part 2 of this challenge, where you'll create a statistical meme about selection bias and missing data using your stippled images.
-:::
-
-## The Problem: Can Algorithms Create Art?
-
-**Core Question:** How can we convert a photograph into an aesthetically pleasing pattern of dots that preserves the visual information of the original image?
-
-**The Challenge:** Blue noise stippling is a technique that converts images into patterns of dots (stipples) using algorithms that balance visual accuracy with spatial distribution. This challenge asks you to implement a modified "void and cluster" algorithm that combines importance sampling with blue noise distribution properties to create stippling patterns that are both visually accurate and spatially well-distributed.
-
-**Our Approach:** We'll use a modified void-and-cluster algorithm that:
-1. Creates an importance map identifying visually important regions
-2. Uses a toroidal (periodic) Gaussian kernel for repulsion to ensure blue noise properties
-3. Iteratively selects points with minimum energy
-4. Balances image content importance with blue noise spatial distribution
-
-::: {.callout-warning}
-## ⚠️ AI Partnership Required
-
-This challenge pushes boundaries intentionally. You'll tackle problems that normally require weeks of study, but with Cursor AI as your partner (and your brain keeping it honest), you can accomplish more than you thought possible.
-
-**The new reality:** The four stages of competence are Ignorance → Awareness → Learning → Mastery. AI lets us produce Mastery-level work while operating primarily in the Awareness stage. I focus on awareness training, you leverage AI for execution, and together we create outputs that used to require years of dedicated study.
-:::
-
-## Introduction to Blue Noise Stippling
-
-Blue noise stippling is a technique for converting images into a pattern of dots (stipples) that preserves the visual information of the original image while creating an aesthetically pleasing, evenly distributed pattern. This method follows the approach described by [Bart Wronski](https://bartwronski.com/2022/08/31/progressive-image-stippling-and-greedy-blue-noise-importance-sampling/).
-
-The method uses a modified "void and cluster" algorithm that combines importance sampling with blue noise distribution properties to create stippling patterns that are both visually accurate and spatially well-distributed. This version uses **smooth extreme downweighting** that selectively downweights very dark and very light tones while preserving mid-tones, creating a more balanced distribution of stipples across the image.
-
-## Loading the Original Image
-
-First, let's load an image that we'll convert to a blue noise stippling pattern. You can use any image you'd like, but we'll demonstrate with the provided example.
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: load-image
-#| echo: true
-#| fig-cap: "Original image before stippling"
-
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-
-# Load the image
-img_path = 'fleischhacker.jpg'
-original_img = Image.open(img_path)
-
-# Convert to grayscale if needed
-if original_img.mode != 'L':
-    original_img = original_img.convert('L')
-
-# Convert to numpy array and normalize to [0, 1]
-img_array = np.array(original_img, dtype=np.float32) / 255.0
-
-# Display the original image
-fig, ax = plt.subplots(figsize=(6.5, 5))
-ax.imshow(img_array, cmap='gray', vmin=0, vmax=1)
-ax.axis('off')
-ax.set_title('Original Image', fontsize=14, fontweight='bold', pad=10)
-plt.tight_layout()
-plt.show()
-
-print(f"Image shape: {img_array.shape}")
-print(f"Image size: {img_array.shape[0]}x{img_array.shape[1]} pixels")
+```{r setup, include=FALSE}
+# Setup chunk: Suppress the xfun::attr() deprecation warning
+# This warning is harmless but can be annoying during rendering
+# Individual code chunks can override these settings if needed
+knitr::opts_chunk$set(
+  warning = FALSE,  # Suppress warnings (including xfun deprecation)
+  message = FALSE   # Suppress package loading messages
+)
+# Note: Chunks with explicit warning/message settings will override these defaults
 ```
 
-### R
+
+
 
 ```{r}
 #| label: load-image-r
-#| echo: true
+#| echo: false
 #| fig-cap: "Original image before stippling"
 
 library(imager)
 library(ggplot2)
 
 # Load the image
-img_path <- 'fleischhacker.jpg'
+img_path <- 'ranges.png'
 original_img <- load.image(img_path)
 
 # Convert to grayscale if needed
-# Check channels (dim[3]), not depth (dim[4])
-if(dim(original_img)[3] == 3) {
+# Check frames/channels (dim[4]): 3 for RGB color, 1 for grayscale
+if(dim(original_img)[4] == 3) {
   original_img <- grayscale(original_img)
 }
 
@@ -114,120 +46,11 @@ plot(original_img, axes = FALSE, main = "Original Image")
 cat("Image dimensions:", dim(original_img)[1], "x", dim(original_img)[2], "pixels\n")
 ```
 
-:::
 
-## Importance Mapping
-
-Before applying the stippling algorithm, we create an **importance map** that identifies which regions of the image should receive more stipples. The importance map is computed by:
-
-- **Brightness inversion**: The image brightness is inverted so that dark areas receive higher importance and thus more dots, while light areas receive fewer dots
-- **Extreme tone downweighting**: Smooth Gaussian functions downweight tones below 0.2 (very dark) and above 0.8 (very light), creating a gradual transition that preserves mid-tones
-- **Mid-tone boost**: A smooth Gaussian function centered on mid-tones provides a gradual increase in importance for mid-tone regions, ensuring they receive appropriate stippling density
-- **Selective and effective**: This approach ensures that stipples are distributed appropriately (more dots in dark areas and mid-tones, fewer in extreme dark/light areas) while maintaining good spatial distribution
-
-::: {.callout-important}
-## 🎯 Key Tuning Point: `compute_importance` Function
-
-**This function is all you need to control dot distribution!** The `compute_importance` function is the primary mechanism for tuning where more or fewer dots appear in your stippled image. By adjusting its parameters, you can:
-
-- **Control which tones get more dots**: Adjust `extreme_threshold_low` and `extreme_threshold_high` to define what counts as "extreme" tones
-- **Reduce dots in extreme regions**: Increase `extreme_downweight` (0.0-1.0) to reduce stipples in very dark or very light areas
-- **Boost specific tone ranges**: Adjust `mid_tone_boost` and `mid_tone_center` to emphasize particular brightness ranges (e.g., skin tones around 0.7)
-- **Control transition smoothness**: Modify `extreme_sigma` and `mid_tone_sigma` to make transitions sharper or more gradual
-
-**No need to modify the stippling algorithm itself**—all the tuning happens in this function. Experiment with different parameter values to achieve your desired dot distribution!
-:::
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: importance-map
-#| echo: true
-#| message: false
-#| warning: false
-
-def compute_importance(
-    gray_img: np.ndarray,
-    extreme_downweight: float = 0.5,
-    extreme_threshold_low: float = 0.4,
-    extreme_threshold_high: float = 0.8,
-    extreme_sigma: float = 0.1,
-    mid_tone_boost: float = 0.4,
-    mid_tone_sigma: float = 0.2,
-):
-    """
-    Importance map computation that downweights extreme tones (very dark and very light)
-    using smooth functions, while boosting mid-tones.
-    
-    Parameters
-    ----------
-    gray_img : np.ndarray
-        Grayscale image in [0, 1]
-    extreme_downweight : float
-        Strength of downweighting for extreme tones (0.0 = no downweighting, 1.0 = maximum downweighting)
-    extreme_threshold_low : float
-        Threshold below which tones are considered "very dark" and get downweighted
-    extreme_threshold_high : float
-        Threshold above which tones are considered "very light" and get downweighted
-    extreme_sigma : float
-        Width of the smooth transition for extreme downweighting (smaller = sharper transition)
-    mid_tone_boost : float
-        Strength of mid-tone emphasis (0.0 = no boost, 1.0 = strong boost)
-    mid_tone_sigma : float
-        Width of the mid-tone Gaussian bump (smaller = narrower, larger = wider)
-    
-    Returns
-    -------
-    importance : np.ndarray
-        Importance map in [0, 1]; higher = more stipples (dark areas and mid-tones get higher importance)
-    """
-    I = np.clip(gray_img, 0.0, 1.0)
-    
-    # Invert brightness: dark areas should get more dots (higher importance)
-    I_inverted = 1.0 - I
-    
-    # Create smooth downweighting mask for extreme tones
-    # Downweight very dark regions (I < extreme_threshold_low)
-    dark_mask = np.exp(-((I - 0.0) ** 2) / (2.0 * (extreme_sigma ** 2)))
-    dark_mask = np.where(I < extreme_threshold_low, dark_mask, 0.0)
-    if dark_mask.max() > 0:
-        dark_mask = dark_mask / dark_mask.max()
-    
-    # Downweight very light regions (I > extreme_threshold_high)
-    light_mask = np.exp(-((I - 1.0) ** 2) / (2.0 * (extreme_sigma ** 2)))
-    light_mask = np.where(I > extreme_threshold_high, light_mask, 0.0)
-    if light_mask.max() > 0:
-        light_mask = light_mask / light_mask.max()
-    
-    # Combine both masks
-    extreme_mask = np.maximum(dark_mask, light_mask)
-    
-    # Apply smooth downweighting
-    importance = I_inverted * (1.0 - extreme_downweight * extreme_mask)
-    
-    # Add smooth gradual mid-tone boost (Gaussian centered on 0.65)
-    mid_tone_center = 0.65
-    mid_tone_gaussian = np.exp(-((I - mid_tone_center) ** 2) / (2.0 * (mid_tone_sigma ** 2)))
-    if mid_tone_gaussian.max() > 0:
-        mid_tone_gaussian = mid_tone_gaussian / mid_tone_gaussian.max()
-    
-    # Boost importance in mid-tone regions
-    importance = importance * (1.0 + mid_tone_boost * mid_tone_gaussian)
-    
-    # Normalize to [0,1]
-    m, M = importance.min(), importance.max()
-    if M > m: 
-        importance = (importance - m) / (M - m)
-    return importance
-```
-
-### R
 
 ```{r}
 #| label: importance-map-r
-#| echo: true
+#| echo: false
 #| message: false
 #| warning: false
 
@@ -284,133 +107,11 @@ compute_importance <- function(gray_img,
 }
 ```
 
-:::
 
-## Blue Noise Stippling Algorithm
-
-The stippling algorithm uses a modified void-and-cluster approach that:
-
-1. Creates an importance map that identifies visually important regions
-2. Initializes an energy field based on the importance map (higher importance → lower energy)
-3. Uses a toroidal (periodic) Gaussian kernel for repulsion to ensure blue noise properties
-4. Iteratively selects points with minimum energy
-5. Adds Gaussian "splats" around selected points to prevent clustering
-6. Balances image content importance with blue noise spatial distribution
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: stippling-functions
-#| echo: true
-#| message: false
-#| warning: false
-
-import numpy as np
-
-def toroidal_gaussian_kernel(h: int, w: int, sigma: float):
-    """
-    Create a periodic (toroidal) 2D Gaussian kernel centered at (0,0).
-    The toroidal property means the kernel wraps around at the edges,
-    ensuring consistent repulsion behavior regardless of point location.
-    """
-    y = np.arange(h)
-    x = np.arange(w)
-    # Compute toroidal distances (minimum distance considering wrapping)
-    dy = np.minimum(y, h - y)[:, None]
-    dx = np.minimum(x, w - x)[None, :]
-    # Compute Gaussian
-    kern = np.exp(-(dx**2 + dy**2) / (2.0 * sigma**2))
-    s = kern.sum()
-    if s > 0:
-        kern /= s  # Normalize
-    return kern
-
-
-def void_and_cluster(
-    input_img: np.ndarray,
-    percentage: float = 0.08,
-    sigma: float = 0.9,
-    content_bias: float = 0.9,
-    importance_img: np.ndarray | None = None,
-    noise_scale_factor: float = 0.1,
-):
-    """
-    Generate blue noise stippling pattern from input image using a modified
-    void-and-cluster algorithm with content-weighted importance.
-    """
-    I = np.clip(input_img, 0.0, 1.0)
-    h, w = I.shape
-
-    # Compute or use provided importance map
-    if importance_img is None:
-        importance = compute_importance(I)
-    else:
-        importance = np.clip(importance_img, 0.0, 1.0)
-
-    # Create toroidal Gaussian kernel for repulsion
-    kernel = toroidal_gaussian_kernel(h, w, sigma)
-
-    # Initialize energy field: lower energy → more likely to be picked
-    energy_current = -importance * content_bias
-
-    # Stipple buffer: start with white background; selected points become black dots
-    final_stipple = np.ones_like(I)
-    samples = []
-
-    # Helper function to roll kernel to an arbitrary position
-    def energy_splat(y, x):
-        """Get energy contribution by rolling the kernel to position (y, x)."""
-        return np.roll(np.roll(kernel, shift=y, axis=0), shift=x, axis=1)
-
-    # Number of points to select
-    num_points = int(I.size * percentage)
-
-    # Choose first point near center with minimal energy
-    cy, cx = h // 2, w // 2
-    r = min(20, h // 10, w // 10)
-    ys = slice(max(0, cy - r), min(h, cy + r))
-    xs = slice(max(0, cx - r), min(w, cx + r))
-    region = energy_current[ys, xs]
-    flat = np.argmin(region)
-    y0 = flat // (region.shape[1]) + (cy - r)
-    x0 = flat % (region.shape[1]) + (cx - r)
-
-    # Place first point
-    energy_current = energy_current + energy_splat(y0, x0)
-    energy_current[y0, x0] = np.inf  # Prevent reselection
-    samples.append((y0, x0, I[y0, x0]))
-    final_stipple[y0, x0] = 0.0  # Black dot
-
-    # Iteratively place remaining points
-    for i in range(1, num_points):
-        # Add exploration noise that decreases over time
-        exploration = 1.0 - (i / num_points) * 0.5  # Decrease from 1.0 to 0.5
-        noise = np.random.normal(0.0, noise_scale_factor * content_bias * exploration, size=energy_current.shape)
-        energy_with_noise = energy_current + noise
-
-        # Find position with minimum energy (with noise for exploration)
-        pos_flat = np.argmin(energy_with_noise)
-        y = pos_flat // w
-        x = pos_flat % w
-
-        # Add Gaussian splat to prevent nearby points from being selected
-        energy_current = energy_current + energy_splat(y, x)
-        energy_current[y, x] = np.inf  # Prevent reselection
-
-        # Record the sample
-        samples.append((y, x, I[y, x]))
-        final_stipple[y, x] = 0.0  # Black dot
-
-    return final_stipple, np.array(samples)
-```
-
-### R
 
 ```{r}
 #| label: stippling-functions-r
-#| echo: true
+#| echo: false
 #| message: false
 #| warning: false
 
@@ -554,55 +255,11 @@ void_and_cluster <- function(input_img,
 
 Before generating the stippling pattern, we prepare the image by resizing if necessary and computing the importance map.
 
-::: {.panel-tabset}
 
-### Python
-
-```{python}
-#| label: prep-image
-#| echo: true
-#| message: false
-#| warning: false
-
-# Resize image if it's too large for faster processing
-max_size = 512
-if img_array.shape[0] > max_size or img_array.shape[1] > max_size:
-    scale = max_size / max(img_array.shape[0], img_array.shape[1])
-    new_size = (int(img_array.shape[1] * scale), int(img_array.shape[0] * scale))
-    img_resized_pil = original_img.resize(new_size, Image.Resampling.LANCZOS)
-    if img_resized_pil.mode != 'L':
-        img_resized_pil = img_resized_pil.convert('L')
-    img_resized = np.array(img_resized_pil, dtype=np.float32) / 255.0
-    print(f"Resized image from {img_array.shape} to {img_resized.shape} for processing")
-else:
-    img_resized = img_array.copy()
-
-# Ensure img_resized is 2D grayscale
-if len(img_resized.shape) > 2:
-    img_resized = img_resized[:, :, 0]
-elif len(img_resized.shape) == 2:
-    pass
-else:
-    raise ValueError(f"Unexpected image shape: {img_resized.shape}")
-
-print(f"Final image shape: {img_resized.shape} (should be 2D for grayscale)")
-
-# Compute importance map using default parameters
-importance_map = compute_importance(
-    img_resized,
-    extreme_downweight=0.5,
-    extreme_threshold_low=0.2,
-    extreme_threshold_high=0.8,
-    extreme_sigma=0.1
-)
-print("Importance map computed")
-```
-
-### R
 
 ```{r}
 #| label: prep-image-r
-#| echo: true
+#| echo: false
 #| message: false
 #| warning: false
 
@@ -626,11 +283,36 @@ arr <- as.array(img_resized)          # dims: [x, y, cc, z] = [w, h, 1, 1]
 img_matrix <- t(arr[,,1,1])           # now dims: [h, w]  (row=y, col=x)
 img_matrix <- img_matrix / max(img_matrix)
 
-cat("Final image shape:", nrow(img_matrix), "x", ncol(img_matrix), "\n")
+# Apply contrast enhancement to darken the car body for better outlining
+# Use a power curve to emphasize darker areas (car body will appear darker)
+# Gamma correction: gamma < 1 darkens the image, making dark areas more prominent
+gamma <- 0.65  # Lower gamma = darker image, better for car body outlining
+img_matrix <- img_matrix^gamma
 
-# Compute importance map
-importance_map <- compute_importance(img_matrix)
-cat("Importance map computed\n")
+# Apply a contrast curve that further enhances dark-to-mid tones
+# This curve boosts darker pixels more than lighter ones
+contrast_curve <- function(x, power = 0.8) {
+  # Power curve: lower values get boosted more
+  x^power
+}
+img_matrix <- contrast_curve(img_matrix, power = 0.8)
+
+# Renormalize to [0, 1] range
+img_matrix <- (img_matrix - min(img_matrix)) / (max(img_matrix) - min(img_matrix) + 1e-10)
+
+cat("Final image shape:", nrow(img_matrix), "x", ncol(img_matrix), "\n")
+cat("Applied contrast enhancement (gamma=", gamma, ")\n", sep="")
+
+# Compute importance map with adjusted parameters to emphasize darker areas (car body)
+# Reduce downweighting of dark tones so car body gets more stipples
+importance_map <- compute_importance(
+  img_matrix,
+  extreme_downweight = 0.3,        # Reduced from 0.5 to preserve more dark tones
+  extreme_threshold_low = 0.3,     # Lower threshold to allow darker areas
+  extreme_threshold_high = 0.85,   # Slightly higher to preserve light areas
+  mid_tone_boost = 0.2             # Reduced mid-tone boost to focus on dark areas
+)
+cat("Importance map computed with enhanced dark tone preservation\n")
 ```
 
 :::
@@ -639,36 +321,10 @@ cat("Importance map computed\n")
 
 Now let's apply the stippling algorithm to create the blue noise stippling pattern.
 
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: generate-stipple
-#| echo: true
-#| message: false
-#| warning: false
-
-# Generate stippling pattern
-print("Generating blue noise stippling pattern...")
-stipple_pattern, samples = void_and_cluster(
-    img_resized,
-    percentage=0.08,
-    sigma=0.9,
-    content_bias=0.9,
-    importance_img=importance_map,
-    noise_scale_factor=0.1
-)
-
-print(f"Generated {len(samples)} stipple points")
-print(f"Stipple pattern shape: {stipple_pattern.shape}")
-```
-
-### R
 
 ```{r}
 #| label: generate-stipple-r
-#| echo: true
+#| echo: false
 #| message: false
 #| warning: false
 
@@ -696,43 +352,10 @@ cat("Stipple pattern shape:", nrow(stipple_pattern), "x", ncol(stipple_pattern),
 
 Let's visualize the original image, the importance map, and the stippled version side by side for comparison.
 
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: display-results
-#| echo: true
-#| fig-cap: "Comparison of original image, importance map, and blue noise stippling"
-#| fig-width: 7
-#| fig-height: 4
-
-fig, axes = plt.subplots(1, 3, figsize=(7, 4))
-
-# Display original image
-axes[0].imshow(img_resized, cmap='gray', vmin=0, vmax=1)
-axes[0].axis('off')
-axes[0].set_title('Original Image', fontsize=14, fontweight='bold', pad=10)
-
-# Display importance map
-axes[1].imshow(importance_map, cmap='gray', vmin=0, vmax=1)
-axes[1].axis('off')
-axes[1].set_title('Importance Map', fontsize=14, fontweight='bold', pad=10)
-
-# Display stippled image
-axes[2].imshow(stipple_pattern, cmap='gray', vmin=0, vmax=1)
-axes[2].axis('off')
-axes[2].set_title('Blue Noise Stippling', fontsize=14, fontweight='bold', pad=10)
-
-plt.tight_layout()
-plt.show()
-```
-
-### R
 
 ```{r}
 #| label: display-results-r
-#| echo: true
+#| echo: false
 #| fig-cap: "Comparison of original image, importance map, and blue noise stippling"
 #| fig-width: 7
 #| fig-height: 4
@@ -755,62 +378,10 @@ plot(as.cimg(t(stipple_pattern), x = ncol(stipple_pattern), y = nrow(stipple_pat
 
 ## Progressive Stippling Animation
 
-This section creates a GIF showing how the stippled image looks as more points are added sequentially. We'll use the already-computed stippling points to generate frames at increments of 100 points.
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: progressive-stippling
-#| echo: true
-#| message: false
-#| warning: false
-
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-from matplotlib.animation import PillowWriter
-
-# Use the existing samples array from the already-computed stippling
-print(f"Using existing stippling with {len(samples)} points")
-print(f"Image shape: {img_resized.shape}")
-
-# Create progressive frames by adding points sequentially
-frame_increment = 100
-frames = []
-point_counts = []
-
-# Start with white background
-h, w = img_resized.shape
-progressive_stipple = np.ones_like(img_resized)
-
-# Add first point and save initial frame
-if len(samples) > 0:
-    y0, x0, intensity0 = int(samples[0, 0]), int(samples[0, 1]), samples[0, 2]
-    progressive_stipple[y0, x0] = 0.0
-    frames.append(progressive_stipple.copy())
-    point_counts.append(1)
-
-# Add remaining points sequentially and save frames at increments
-for i in range(1, len(samples)):
-    y, x = int(samples[i, 0]), int(samples[i, 1])
-    progressive_stipple[y, x] = 0.0  # Add black dot
-    
-    # Save frame at increments (100, 200, 300, ...) and at the end
-    if (i + 1) % frame_increment == 0 or i == len(samples) - 1:
-        frames.append(progressive_stipple.copy())
-        point_counts.append(i + 1)
-
-print(f"Generated {len(frames)} frames")
-print(f"Point counts: {point_counts}")
-```
-
-### R
 
 ```{r}
 #| label: progressive-stippling-r
-#| echo: true
+#| echo: false
 #| message: false
 #| warning: false
 
@@ -852,48 +423,13 @@ cat("Generated", length(frames), "frames\n")
 cat("Point counts:", paste(point_counts, collapse = ", "), "\n")
 ```
 
-:::
 
 Now let's create the GIF animation:
 
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: create-gif
-#| include: false
-#| fig-cap: "Progressive stippling animation showing build-up of points"
-#| message: false
-#| warning: false
-
-# Create figure for animation
-fig, ax = plt.subplots(figsize=(7, 5))
-ax.axis('off')
-
-# Create the animation
-print("Creating GIF animation...")
-writer = PillowWriter(fps=2)  # 2 frames per second
-
-gif_path = 'progressive_stippling.gif'
-with writer.saving(fig, gif_path, dpi=100):
-    for i in range(len(frames)):
-        ax.clear()
-        ax.axis('off')
-        ax.imshow(frames[i], cmap='gray', vmin=0, vmax=1)
-        ax.set_title(f'Progressive Stippling: {point_counts[i]} points', 
-                     fontsize=14, fontweight='bold', pad=10)
-        writer.grab_frame()
-
-print(f"GIF saved to: {gif_path}")
-print(f"Total frames: {len(frames)}")
-print(f"Point counts: {point_counts}")
-```
-
-### R
 
 ```{r}
 #| label: create-gif-r
+#| echo: false
 #| include: false
 #| message: false
 #| warning: false
@@ -932,281 +468,3 @@ cat("Point counts:", paste(point_counts, collapse = ", "), "\n")
 :::
 
 ![Progressive stippling animation showing the sequential build-up of points. Each frame represents an increment of 100 points, demonstrating how the blue noise stippling pattern develops as more points are added.](progressive_stippling.gif)
-
-## Appendix: Average Tone by Section
-
-To understand the distribution of tones across the image and identify the center of skin tone, we divide the image into a grid of small sections and compute the average brightness in each section.
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: tone-analysis
-#| echo: true
-#| fig-cap: "Grid showing average tone in each section"
-#| fig-width: 12
-#| fig-height: 8
-
-# Divide image into a grid of sections
-grid_rows = 16
-grid_cols = 12
-
-h, w = img_resized.shape
-section_h = h // grid_rows
-section_w = w // grid_cols
-
-# Create arrays to store average tones
-average_tones = np.zeros((grid_rows, grid_cols))
-section_coords = []
-
-# Compute average tone for each section
-for i in range(grid_rows):
-    for j in range(grid_cols):
-        y_start = i * section_h
-        y_end = (i + 1) * section_h if i < grid_rows - 1 else h
-        x_start = j * section_w
-        x_end = (j + 1) * section_w if j < grid_cols - 1 else w
-        
-        section = img_resized[y_start:y_end, x_start:x_end]
-        avg_tone = np.mean(section)
-        average_tones[i, j] = avg_tone
-        section_coords.append((i, j, avg_tone))
-
-# Display the grid with average tones
-fig, axes = plt.subplots(1, 2, figsize=(7, 5))
-
-# Show original image with grid overlay
-axes[0].imshow(img_resized, cmap='gray', vmin=0, vmax=1)
-axes[0].set_title('Original Image with Grid', fontsize=14, fontweight='bold', pad=10)
-axes[0].axis('off')
-
-# Draw grid lines
-for i in range(grid_rows + 1):
-    y = i * section_h
-    axes[0].axhline(y, color='red', linewidth=0.5, alpha=0.5)
-for j in range(grid_cols + 1):
-    x = j * section_w
-    axes[0].axvline(x, color='red', linewidth=0.5, alpha=0.5)
-
-# Show heatmap of average tones
-im = axes[1].imshow(average_tones, cmap='gray', vmin=0, vmax=1, aspect='auto')
-axes[1].set_title('Average Tone by Section', fontsize=14, fontweight='bold', pad=10)
-axes[1].set_xlabel('Column', fontsize=12)
-axes[1].set_ylabel('Row', fontsize=12)
-
-# Add text annotations showing average tone values
-for i in range(grid_rows):
-    for j in range(grid_cols):
-        tone = average_tones[i, j]
-        # Use white text for dark sections, black text for light sections
-        text_color = 'white' if tone < 0.5 else 'black'
-        axes[1].text(j, i, f'{tone:.2f}', ha='center', va='center', 
-                     color=text_color, fontsize=6, fontweight='bold')
-
-plt.colorbar(im, ax=axes[1], label='Average Brightness')
-plt.tight_layout()
-plt.show()
-
-# Print summary statistics
-print(f"\nGrid size: {grid_rows} rows × {grid_cols} columns")
-print(f"Section size: approximately {section_h} × {section_w} pixels")
-print(f"\nAverage tone statistics:")
-print(f"  Overall mean: {np.mean(average_tones):.3f}")
-print(f"  Overall std: {np.std(average_tones):.3f}")
-print(f"  Min: {np.min(average_tones):.3f}")
-print(f"  Max: {np.max(average_tones):.3f}")
-
-# Find sections with tones close to skin tone (around 0.7)
-skin_tone_target = 0.7
-tolerance = 0.1
-skin_tone_sections = [(i, j, tone) for i, j, tone in section_coords 
-                       if abs(tone - skin_tone_target) < tolerance]
-
-print(f"\nSections with tone close to skin tone (0.7 ± {tolerance}):")
-if skin_tone_sections:
-    for i, j, tone in sorted(skin_tone_sections, key=lambda x: abs(x[2] - skin_tone_target)):
-        print(f"  Row {i}, Col {j}: {tone:.3f}")
-else:
-    print("  None found")
-
-# Print full grid as table
-print(f"\nFull grid of average tones (row, col):")
-print("     ", end="")
-for j in range(grid_cols):
-    print(f"Col{j:2d} ", end="")
-print()
-for i in range(grid_rows):
-    print(f"Row{i:2d} ", end="")
-    for j in range(grid_cols):
-        print(f"{average_tones[i, j]:.3f} ", end="")
-    print()
-```
-
-### R
-
-```{r}
-#| label: tone-analysis-r
-#| echo: true
-#| fig-cap: "Grid showing average tone in each section"
-#| fig-width: 12
-#| fig-height: 8
-
-# Divide image into a grid of sections
-grid_rows <- 16
-grid_cols <- 12
-
-h <- nrow(img_matrix)
-w <- ncol(img_matrix)
-section_h <- as.integer(h / grid_rows)
-section_w <- as.integer(w / grid_cols)
-
-# Create arrays to store average tones
-average_tones <- matrix(0, nrow = grid_rows, ncol = grid_cols)
-section_coords <- list()
-
-# Compute average tone for each section
-for(i in 1:grid_rows) {
-  for(j in 1:grid_cols) {
-    y_start <- (i - 1) * section_h + 1
-    y_end <- if(i < grid_rows) i * section_h else h
-    x_start <- (j - 1) * section_w + 1
-    x_end <- if(j < grid_cols) j * section_w else w
-    
-    section <- img_matrix[y_start:y_end, x_start:x_end]
-    avg_tone <- mean(section)
-    average_tones[i, j] <- avg_tone
-    section_coords[[length(section_coords) + 1]] <- c(i, j, avg_tone)
-  }
-}
-
-# Display the grid with average tones
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 2))
-
-# Show original image with grid overlay
-plot(img_resized, axes = FALSE, main = "Original Image with Grid")
-
-# Draw grid lines (approximate)
-# Note: imager plots use different coordinate system, so grid lines are approximate
-for(i in 0:grid_rows) {
-  y <- i * section_h
-  abline(h = y, col = 'red', lwd = 0.5, lty = 2)
-}
-for(j in 0:grid_cols) {
-  x <- j * section_w
-  abline(v = x, col = 'red', lwd = 0.5, lty = 2)
-}
-
-# Show heatmap of average tones
-image(1:grid_cols, 1:grid_rows, t(average_tones), 
-      col = gray(seq(0, 1, length.out = 256)),
-      xlab = "Column", ylab = "Row",
-      main = "Average Tone by Section",
-      axes = TRUE)
-axis(1, at = 1:grid_cols)
-axis(2, at = 1:grid_rows)
-
-# Add text annotations showing average tone values
-for(i in 1:grid_rows) {
-  for(j in 1:grid_cols) {
-    tone <- average_tones[i, j]
-    # Use white text for dark sections, black text for light sections
-    text_color <- if(tone < 0.5) 'white' else 'black'
-    text(j, i, sprintf('%.2f', tone), 
-         col = text_color, cex = 0.4, font = 2)
-  }
-}
-
-# Print summary statistics
-cat("\nGrid size:", grid_rows, "rows ×", grid_cols, "columns\n")
-cat("Section size: approximately", section_h, "×", section_w, "pixels\n")
-cat("\nAverage tone statistics:\n")
-cat("  Overall mean:", sprintf("%.3f", mean(average_tones)), "\n")
-cat("  Overall std:", sprintf("%.3f", sd(average_tones)), "\n")
-cat("  Min:", sprintf("%.3f", min(average_tones)), "\n")
-cat("  Max:", sprintf("%.3f", max(average_tones)), "\n")
-
-# Find sections with tones close to skin tone (around 0.7)
-skin_tone_target <- 0.7
-tolerance <- 0.1
-skin_tone_sections <- Filter(function(x) abs(x[3] - skin_tone_target) < tolerance, section_coords)
-
-cat("\nSections with tone close to skin tone (0.7 ±", tolerance, "):\n")
-if(length(skin_tone_sections) > 0) {
-  # Sort by distance from target
-  sorted_sections <- skin_tone_sections[order(sapply(skin_tone_sections, function(x) abs(x[3] - skin_tone_target)))]
-  for(section in sorted_sections) {
-    cat("  Row", section[1], ", Col", section[2], ":", sprintf("%.3f", section[3]), "\n")
-  }
-} else {
-  cat("  None found\n")
-}
-
-# Print full grid as table
-cat("\nFull grid of average tones (row, col):\n")
-cat("     ")
-for(j in 1:grid_cols) {
-  cat(sprintf("Col%2d ", j))
-}
-cat("\n")
-for(i in 1:grid_rows) {
-  cat(sprintf("Row%2d ", i))
-  for(j in 1:grid_cols) {
-    cat(sprintf("%.3f ", average_tones[i, j]))
-  }
-  cat("\n")
-}
-```
-
-:::
-
-## Challenge Requirements 📋
-
-::: {.panel-tabset}
-
-### Python
-
-```{python}
-#| label: challenge-comparison
-#| echo: false
-#| fig-cap: "Side-by-side comparison of original and stippled images"
-#| fig-width: 10
-#| fig-height: 5
-
-fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-
-# Display original image
-axes[0].imshow(img_resized, cmap='gray', vmin=0, vmax=1)
-axes[0].axis('off')
-axes[0].set_title('Original Image', fontsize=16, fontweight='bold', pad=10)
-
-# Display stippled image
-axes[1].imshow(stipple_pattern, cmap='gray', vmin=0, vmax=1)
-axes[1].axis('off')
-axes[1].set_title('Stippled Image', fontsize=16, fontweight='bold', pad=10)
-
-plt.tight_layout()
-plt.show()
-```
-
-### R
-
-```{r}
-#| label: challenge-comparison-r
-#| echo: false
-#| fig-cap: "Side-by-side comparison of original and stippled images"
-#| fig-width: 10
-#| fig-height: 5
-
-par(mfrow = c(1, 2), mar = c(2, 2, 2, 2))
-
-# Original image
-plot(img_resized, axes = FALSE, main = "Original Image")
-
-# Stipple pattern (matrix [h, w]) -> transpose for imager ([x, y])
-plot(as.cimg(t(stipple_pattern), x = ncol(stipple_pattern), y = nrow(stipple_pattern), cc = 1), 
-     axes = FALSE, main = "Stippled Image")
-```
-
-:::
-
